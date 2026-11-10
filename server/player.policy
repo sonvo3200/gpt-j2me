@@ -1,0 +1,7 @@
+grant codeBase "${microemu.runner}" {
+    permission java.security.AllPermission;
+};
+
+grant codeBase "${microemu.engine}" {
+    permission java.security.AllPermission;
+};
