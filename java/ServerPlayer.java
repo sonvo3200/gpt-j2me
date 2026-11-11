@@ -198,15 +198,42 @@ public final class ServerPlayer {
             SwingDeviceComponent keys = new SwingDeviceComponent();
             String line;
             while ((line = input.readLine()) != null) {
-                String[] parts = line.split(" ");
-                if (parts.length != 3) continue;
-                boolean pressed = "down".equals(parts[0]);
-                KeyEvent event = new KeyEvent(keys, pressed ? KeyEvent.KEY_PRESSED : KeyEvent.KEY_RELEASED,
-                    System.currentTimeMillis(), 0, Integer.parseInt(parts[1]), (char) Integer.parseInt(parts[2]));
-                synchronized (emulator) {
-                    if (emulator.restartPending()) continue;
-                    if (pressed) keys.keyPressed(event);
-                    else keys.keyReleased(event);
+                try {
+                    String[] parts = line.split(" ");
+                    if (parts.length == 3 && ("down".equals(parts[0]) || "up".equals(parts[0]))) {
+                        boolean pressed = "down".equals(parts[0]);
+                        KeyEvent event = new KeyEvent(keys, pressed ? KeyEvent.KEY_PRESSED : KeyEvent.KEY_RELEASED,
+                            System.currentTimeMillis(), 0, Integer.parseInt(parts[1]), (char) Integer.parseInt(parts[2]));
+                        synchronized (emulator) {
+                            if (emulator.restartPending()) continue;
+                            if (pressed) keys.keyPressed(event);
+                            else keys.keyReleased(event);
+                        }
+                    } else if (parts.length == 4 && "pointer".equals(parts[0])) {
+                        String type = parts[1];
+                        int x = Integer.parseInt(parts[2]);
+                        int y = Integer.parseInt(parts[3]);
+                        synchronized (emulator) {
+                            if (emulator.restartPending()) continue;
+                            MIDletContext midletContext = MIDletBridge.getMIDletContext();
+                            if (midletContext != null && !midletContext.isLauncher()) {
+                                MIDletAccess access = midletContext.getMIDletAccess();
+                                if (access != null) {
+                                    DisplayAccess displayAccess = access.getDisplayAccess();
+                                    if (displayAccess != null) {
+                                        if ("pressed".equals(type)) {
+                                            displayAccess.pointerPressed(x, y);
+                                        } else if ("released".equals(type)) {
+                                            displayAccess.pointerReleased(x, y);
+                                        } else if ("dragged".equals(type)) {
+                                            displayAccess.pointerDragged(x, y);
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                } catch (Throwable ignored) {
                 }
             }
         } finally {

@@ -63,9 +63,64 @@ function Home({ games, runningGames, onPlay, onUpload, onSettings, error }) {
   )
 }
 
-function Controller({ game, screen, phase, error, closing, closeError, onBack, onReset, onClose, sendKey, releaseKeys, activeKeys }) {
+function Controller({ game, screen, phase, error, closing, closeError, onBack, onReset, onClose, sendKey, releaseKeys, activeKeys, sendPointer }) {
   const [keyboardVisible, setKeyboardVisible] = useState(true)
   const [width, height] = screenSizes[game.screenSize]
+  const isPointerDown = useRef(false)
+
+  function getCanvasCoords(event) {
+    const canvas = screen.current
+    if (!canvas) return null
+    const rect = canvas.getBoundingClientRect()
+    if (!rect.width || !rect.height) return null
+    const scaleX = canvas.width / rect.width
+    const scaleY = canvas.height / rect.height
+    const x = Math.floor((event.clientX - rect.left) * scaleX)
+    const y = Math.floor((event.clientY - rect.top) * scaleY)
+    return {
+      x: Math.max(0, Math.min(canvas.width - 1, x)),
+      y: Math.max(0, Math.min(canvas.height - 1, y)),
+    }
+  }
+
+  function handlePointerDown(event) {
+    if (event.button !== 0 || phase !== 'running') return
+    const coords = getCanvasCoords(event)
+    if (!coords) return
+    event.preventDefault()
+    isPointerDown.current = true
+    try {
+      event.currentTarget.setPointerCapture(event.pointerId)
+    } catch {}
+    sendPointer?.('pressed', coords.x, coords.y)
+  }
+
+  function handlePointerMove(event) {
+    if (!isPointerDown.current || phase !== 'running') return
+    const coords = getCanvasCoords(event)
+    if (!coords) return
+    event.preventDefault()
+    sendPointer?.('dragged', coords.x, coords.y)
+  }
+
+  function handlePointerUp(event) {
+    if (!isPointerDown.current) return
+    isPointerDown.current = false
+    const coords = getCanvasCoords(event)
+    if (coords) {
+      sendPointer?.('released', coords.x, coords.y)
+    }
+  }
+
+  function handlePointerCancel(event) {
+    if (!isPointerDown.current) return
+    isPointerDown.current = false
+    const coords = getCanvasCoords(event)
+    if (coords) {
+      sendPointer?.('released', coords.x, coords.y)
+    }
+  }
+
   const keyProps = (key) => ({
     type: 'button',
     disabled: phase !== 'running',
@@ -109,7 +164,18 @@ function Controller({ game, screen, phase, error, closing, closeError, onBack, o
       {closeError && <p className="home-error" role="alert">{closeError}</p>}
       <div className={width > height ? "play-area landscape" : "play-area"}>
         <div className="screen-shell">
-          <canvas ref={screen} width={width} height={height} role="img" aria-label="Màn hình trò chơi"/>
+          <canvas
+            ref={screen}
+            width={width}
+            height={height}
+            role="img"
+            aria-label="Màn hình trò chơi"
+            onPointerDown={handlePointerDown}
+            onPointerMove={handlePointerMove}
+            onPointerUp={handlePointerUp}
+            onPointerCancel={handlePointerCancel}
+            onContextMenu={(event) => event.preventDefault()}
+          />
           {phase !== 'running' && (
             <div className="screen-status" role={error ? 'alert' : 'status'}>
               {phase === 'starting' && <span className="spinner" aria-hidden="true"/>}
@@ -214,6 +280,11 @@ function App() {
     else held.current.delete(key)
     if (!repeat) setActiveKeys(new Set(held.current))
     session.current.sendKey(key, down, repeat)
+  }
+
+  function sendPointer(type, x, y) {
+    if (phase !== 'running' || !session.current) return
+    session.current.sendPointer(type, x, y)
   }
 
   useEffect(() => {
@@ -333,7 +404,8 @@ function App() {
 
   return selected
     ? <Controller game={selected} screen={screen} phase={phase} error={playError} closing={closing} closeError={closeError} onBack={goBack}
-        onReset={() => openGame(selected, true)} onClose={closeGame} sendKey={sendKey} releaseKeys={releaseKeys} activeKeys={activeKeys}/>
+        onReset={() => openGame(selected, true)} onClose={closeGame} sendKey={sendKey} releaseKeys={releaseKeys} activeKeys={activeKeys}
+        sendPointer={sendPointer}/>
     : <>
         <Home games={games} runningGames={runningGames} onPlay={openGame} error={listError}
           onUpload={() => showDialog()} onSettings={showDialog}/>

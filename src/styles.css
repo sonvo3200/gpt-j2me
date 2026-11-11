@@ -165,6 +165,9 @@ canvas {
   width: 100%;
   height: auto;
   image-rendering: pixelated;
+  cursor: pointer;
+  touch-action: none;
+  user-select: none;
 }
 
 .screen-status {

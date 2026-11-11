@@ -116,6 +116,10 @@ export function microemuServer() {
     session.child.stdin.write((down ? 'down ' : 'up ') + keyCodes(key).join(' ') + '\n')
   }
 
+  function writePointer(session, type, x, y) {
+    session.child.stdin.write(`pointer ${type} ${x} ${y}\n`)
+  }
+
   function releaseKeys(session) {
     if (!session.input) return
     for (const key of session.input.held) writeKey(session, key, false)
@@ -235,7 +239,7 @@ export function microemuServer() {
       return
     }
 
-    const match = /^\/api\/sessions\/([0-9a-f-]{36})\/(frame|key|release)$/.exec(url.pathname)
+    const match = /^\/api\/sessions\/([0-9a-f-]{36})\/(frame|key|release|pointer)$/.exec(url.pathname)
     const session = match && sessions.get(match[1])
     if (!session || session.owner !== owner) throw new RequestError(404, 'Phiên giả lập đã đóng.')
     if (session.error !== null) throw new RequestError(422, session.error)
@@ -257,6 +261,27 @@ export function microemuServer() {
 
     if (match[2] === 'release' && req.method === 'POST') {
       if (session.input?.controller === controller) releaseKeys(session)
+      return respond(res, 204)
+    }
+
+    if (match[2] === 'pointer' && req.method === 'POST') {
+      let command
+      try {
+        command = JSON.parse(await readBody(req, 128))
+      } catch (error) {
+        if (error instanceof RequestError) throw error
+        throw new RequestError(400, 'Dữ liệu chuột không hợp lệ.')
+      }
+      const { type, x, y } = command || {}
+      if (!['pressed', 'released', 'dragged'].includes(type) || !Number.isInteger(x) || !Number.isInteger(y)) {
+        throw new RequestError(400, 'Tọa độ hoặc sự kiện chuột không hợp lệ.')
+      }
+      if (session.input?.controller === controller) {
+        session.input.touched = Date.now()
+      } else if (!session.input) {
+        session.input = { controller, held: new Set(), touched: Date.now() }
+      }
+      writePointer(session, type, x, y)
       return respond(res, 204)
     }
 

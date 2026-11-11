@@ -143,6 +143,50 @@ export function playJar(game, loadFiles, { reset, screenSize, onFrame, onError }
     }).catch(fail).finally(() => { pendingKeys -= 1 })
   }
 
+  let sendingPointer = false
+  let queuedDrag = null
+
+  function dispatchPointer(type, x, y) {
+    if (!sessionUrl || signal.aborted) return
+    inputQueue = inputQueue.then(async () => {
+      if (signal.aborted) return
+      const response = await request(sessionUrl + '/pointer', {
+        method: 'POST',
+        headers: { ...controllerHeaders, 'Content-Type': 'application/json' },
+        body: JSON.stringify({ type, x, y }),
+        signal,
+      })
+      if (!response.ok && response.status !== 404) throw await responseError(response)
+    }).catch(fail)
+  }
+
+  function sendPointer(type, x, y) {
+    if (!sessionUrl || signal.aborted) return
+    if (type === 'dragged') {
+      queuedDrag = { x, y }
+      if (sendingPointer) return
+      sendingPointer = true
+      inputQueue = inputQueue.then(async () => {
+        while (queuedDrag && !signal.aborted) {
+          const { x: dx, y: dy } = queuedDrag
+          queuedDrag = null
+          const response = await request(sessionUrl + '/pointer', {
+            method: 'POST',
+            headers: { ...controllerHeaders, 'Content-Type': 'application/json' },
+            body: JSON.stringify({ type: 'dragged', x: dx, y: dy }),
+            signal,
+          })
+          if (!response.ok && response.status !== 404) throw await responseError(response)
+        }
+      }).catch(fail).finally(() => {
+        sendingPointer = false
+      })
+      return
+    }
+    queuedDrag = null
+    dispatchPointer(type, x, y)
+  }
+
   void run()
-  return { detach, release, sendKey }
+  return { detach, release, sendKey, sendPointer }
 }
